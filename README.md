@@ -49,13 +49,20 @@ Raspberry Pi OS **Lite** (32-bit). In `/boot/config.txt` (bzw.
 `/boot/firmware/config.txt`):
 
 ```ini
-# Composite PAL, 4:3, ohne Farbträger (schärferes Monochrombild!)
-sdtv_mode=2
+# Composite NTSC-Timing (60 Hz), 4:3, ohne Farbträger (schärferes Monochrombild!)
+# Der DM602 stammt aus der Commodore-PC-Ära (CGA-Composite = 60 Hz) und
+# rastet bei 50 Hz PAL vertikal nicht ein (durchlaufendes Bild).
+sdtv_mode=0
 sdtv_aspect=1
 sdtv_disable_colourburst=1
-enable_tvout=1
 disable_overscan=1
 ```
+
+Framebuffer ist dann 720×480 (statt 720×576) — `rrdpd` übernimmt die Größe
+automatisch aus sysfs. Läuft das Bild weiterhin (nur langsamer), die
+**V-HOLD-Regelung** am Monitor nachstellen. Für Monitore, die wirklich 50 Hz
+wollen: `sdtv_mode=2` (PAL). `enable_tvout` gibt es erst ab Pi 4 und ist auf
+dem Pi 1 wirkungslos.
 
 In `/boot/cmdline.txt` anhängen (Konsolen-Blanking und Cursor aus):
 
