@@ -26,6 +26,7 @@ erzeugen kann (matplotlib, Grafana-Renderer, Screenshots, …).
 ```
 POST /api/print            Body: text/plain → wird an die Stream-Ansicht angehängt
 TCP  :2323                 nc <pi> 2323, telnet <pi> 2323, Syslog-Pipe, …
+POST /api/stream/clear     Terminal-Ansicht leeren
 ```
 
 Beides landet in derselben Terminal-Ansicht (Quelle `stream`): Scrolling,
