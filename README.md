@@ -82,6 +82,8 @@ Deployment:
 sudo mkdir -p /opt/rrdpd/fonts
 sudo cp rrdpd config.example.json /opt/rrdpd/
 sudo mv /opt/rrdpd/config.example.json /opt/rrdpd/config.json
+# Wichtig nach scp von Windows: Execute-Bit geht beim Kopieren verloren
+sudo chmod +x /opt/rrdpd/rrdpd
 # optional schönere Schriften:
 cp /usr/share/consolefonts/Lat15-TerminusBold16.psf.gz /opt/rrdpd/fonts/
 sudo cp deploy/rrdpd.service /etc/systemd/system/
