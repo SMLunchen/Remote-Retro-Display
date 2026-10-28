@@ -1,0 +1,16 @@
+[Unit]
+Description=Remote Retro Display Daemon (rrdpd)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/rrdpd
+ExecStart=/opt/rrdpd/rrdpd -config /opt/rrdpd/config.json
+Restart=always
+RestartSec=3
+# Zugriff auf /dev/fb0 und serielle Ports:
+User=root
+
+[Install]
+WantedBy=multi-user.target

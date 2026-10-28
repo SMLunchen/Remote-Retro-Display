@@ -1,0 +1,15 @@
+{
+  "listen": ":8080",
+  "fb": "/dev/fb0",
+  "width": 720,
+  "height": 576,
+  "fontsDir": "fonts",
+  "insets": { "left": 24, "right": 24, "top": 20, "bottom": 20 },
+  "font": { "name": "builtin-7x13", "scale": 2 },
+  "maxFPS": 10,
+  "layout": { "mode": "single", "viewports": ["net", "stream"] },
+  "stream": { "port": 2323, "wrap": true, "ansi": true, "controls": true, "charset": "utf8" },
+  "serial": [
+    { "port": "/dev/ttyUSB0", "baud": 115200, "databits": 8, "parity": "none", "stopbits": 1, "enabled": false }
+  ]
+}

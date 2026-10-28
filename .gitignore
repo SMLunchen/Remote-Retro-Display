@@ -1,0 +1,9 @@
+/rrdpd
+*.exe
+*.exe~
+dist/
+config.json
+fonts/*.psf
+fonts/*.psfu
+fonts/*.psf.gz
+fonts/*.psfu.gz

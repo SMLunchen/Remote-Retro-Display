@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remote-RetroDisplay</title>
+<style>
+  :root { --bg:#0c0f0c; --panel:#141a14; --line:#263326; --txt:#bfe8bf; --dim:#6f8f6f; --acc:#39d353; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font:14px/1.5 "Segoe UI", system-ui, sans-serif; padding:16px; }
+  h1 { font-size:18px; margin:0 0 12px; color:var(--acc); letter-spacing:1px; }
+  h1 small { color:var(--dim); font-weight:normal; letter-spacing:0; }
+  h2 { font-size:13px; margin:0 0 10px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; }
+  .grid { display:grid; grid-template-columns:minmax(300px,1.2fr) minmax(280px,1fr); gap:16px; max-width:1200px; }
+  @media (max-width:760px){ .grid { grid-template-columns:1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:16px; }
+  img#preview { width:100%; image-rendering:pixelated; background:#000; border:1px solid var(--line); border-radius:4px; }
+  label { display:inline-flex; align-items:center; gap:6px; margin:2px 10px 2px 0; }
+  select,input[type=number],input[type=text],button {
+    background:#0a0d0a; color:var(--txt); border:1px solid var(--line); border-radius:4px; padding:4px 8px; font:inherit; }
+  input[type=number]{ width:70px; }
+  button { cursor:pointer; } button:hover { border-color:var(--acc); }
+  button.primary { background:var(--acc); color:#06220c; font-weight:600; border-color:var(--acc); }
+  .row { margin:8px 0; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .muted { color:var(--dim); font-size:12px; }
+  code { background:#0a0d0a; padding:1px 5px; border-radius:3px; font-size:12px; }
+  #msg { position:fixed; right:16px; bottom:16px; background:var(--panel); border:1px solid var(--acc);
+         border-radius:6px; padding:8px 14px; display:none; }
+</style>
+</head>
+<body>
+<h1>REMOTE-RETRODISPLAY <small>· Commodore DM602 · rrdpd</small></h1>
+<div class="grid">
+  <div>
+    <div class="panel">
+      <h2>Vorschau (CRT-Bild)</h2>
+      <img id="preview" src="/preview" alt="Vorschau">
+      <div class="muted" id="res"></div>
+    </div>
+    <div class="panel">
+      <h2>Layout &amp; Quellen</h2>
+      <div class="row">
+        <label><input type="radio" name="mode" value="single"> Vollbild</label>
+        <label><input type="radio" name="mode" value="hsplit"> Split nebeneinander</label>
+        <label><input type="radio" name="mode" value="vsplit"> Split übereinander</label>
+      </div>
+      <div class="row">Viewport 1: <select id="vp0"></select></div>
+      <div class="row" id="vp1row">Viewport 2: <select id="vp1"></select></div>
+      <div class="row"><button class="primary" onclick="applyLayout()">Übernehmen</button></div>
+    </div>
+    <div class="panel">
+      <h2>Screens (Quelle „net“)</h2>
+      <div class="row">Aktiv: <select id="screens"></select>
+        <button onclick="activateScreen()">Anzeigen</button></div>
+      <div class="muted">Befüllen per <code>POST /api/screen</code> – siehe docs/PROTOKOLL.md</div>
+    </div>
+  </div>
+  <div>
+    <div class="panel">
+      <h2>Seriell (USB-RS232)</h2>
+      <div class="row">Port: <select id="serPort"></select>
+        <button onclick="loadState()" title="Ports neu einlesen">⟳</button></div>
+      <div class="row">Baud: <select id="serBaud">
+          <option>300</option><option>1200</option><option>2400</option><option>4800</option>
+          <option selected>9600</option><option>19200</option><option>38400</option>
+          <option>57600</option><option>115200</option></select>
+        Parität: <select id="serParity"><option value="none">keine</option>
+          <option value="even">gerade</option><option value="odd">ungerade</option></select>
+        Stopbits: <select id="serStop"><option>1</option><option>2</option></select>
+      </div>
+      <div class="row">
+        <button class="primary" onclick="serialApply(true)">Verbinden</button>
+        <button onclick="serialApply(false)">Trennen</button>
+      </div>
+      <div class="muted" id="serStatus"></div>
+    </div>
+    <div class="panel">
+      <h2>TCP-Stream (Logs)</h2>
+      <div class="row muted" id="streamInfo"></div>
+      <div class="row">
+        <label><input type="checkbox" id="optWrap"> Zeilenumbruch</label>
+        <label><input type="checkbox" id="optAnsi"> ANSI-Sequenzen</label>
+        <label><input type="checkbox" id="optCtrl"> Steuerzeichen</label>
+        Zeichensatz: <select id="optCharset"><option>utf8</option><option>latin1</option></select>
+      </div>
+      <div class="row">
+        <button class="primary" onclick="applyStreamOpts()">Übernehmen</button>
+        <button onclick="api('POST','/api/stream/clear',{})">Ansicht löschen</button>
+      </div>
+      <div class="muted">Testen: <code id="ncHint">nc &lt;host&gt; 2323</code></div>
+    </div>
+    <div class="panel">
+      <h2>Darstellung</h2>
+      <div class="row">Schrift: <select id="fontName"></select>
+        Skalierung: <input type="number" id="fontScale" min="1" max="8" value="2"></div>
+      <div class="row">Overscan-Ränder:
+        L <input type="number" id="insL"> R <input type="number" id="insR">
+        O <input type="number" id="insT"> U <input type="number" id="insB"></div>
+      <div class="row">max. FPS: <input type="number" id="maxFPS" min="1" max="30"></div>
+      <div class="row"><button class="primary" onclick="applyDisplay()">Übernehmen</button></div>
+    </div>
+    <div class="panel">
+      <h2>Testbild</h2>
+      <div class="row">
+        <button onclick="testPattern('grid')">Gitter/Geometrie</button>
+        <button onclick="testPattern('bars')">Graustufen</button>
+        <button onclick="testPattern('font')">Schriftmuster</button>
+      </div>
+      <div class="muted">Testbild anzeigen: Quelle „test“ einem Viewport zuweisen.</div>
+    </div>
+  </div>
+</div>
+<div id="msg"></div>
+<script>
+let state = null;
+
+function toast(t, isErr) {
+  const m = document.getElementById('msg');
+  m.textContent = t;
+  m.style.borderColor = isErr ? '#d33939' : 'var(--acc)';
+  m.style.display = 'block';
+  clearTimeout(m._t);
+  m._t = setTimeout(() => m.style.display = 'none', 2500);
+}
+
+async function api(method, path, body) {
+  try {
+    const r = await fetch(path, {
+      method,
+      headers: body ? {'Content-Type': 'application/json'} : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || r.status);
+    await loadState();
+    return j;
+  } catch (e) {
+    toast('Fehler: ' + e.message, true);
+    throw e;
+  }
+}
+
+function fillSelect(sel, items, current) {
+  sel.innerHTML = '';
+  for (const it of items) {
+    const o = document.createElement('option');
+    o.value = it; o.textContent = it;
+    if (it === current) o.selected = true;
+    sel.appendChild(o);
+  }
+}
+
+async function loadState() {
+  const r = await fetch('/api/state');
+  const j = await r.json();
+  if (!j.ok) return;
+  state = j;
+  const srcIds = j.sources.map(s => s.id);
+  fillSelect(document.getElementById('vp0'), srcIds, j.layout.viewports[0]);
+  fillSelect(document.getElementById('vp1'), srcIds, j.layout.viewports[1]);
+  document.querySelectorAll('input[name=mode]').forEach(x => x.checked = (x.value === j.layout.mode));
+  document.getElementById('vp1row').style.display = j.layout.mode === 'single' ? 'none' : 'flex';
+  fillSelect(document.getElementById('screens'), j.screens.names || [], j.screens.active);
+  fillSelect(document.getElementById('serPort'), j.serialPorts || [],
+             (j.serialPorts || [])[0]);
+  const serTitles = j.sources.filter(s => s.id.startsWith('serial:')).map(s => s.title);
+  document.getElementById('serStatus').textContent = serTitles.join(' · ');
+  const st = j.sources.find(s => s.id === 'stream');
+  document.getElementById('streamInfo').textContent = st ? st.title : '';
+  const c = j.config;
+  document.getElementById('optWrap').checked = c.stream.wrap;
+  document.getElementById('optAnsi').checked = c.stream.ansi;
+  document.getElementById('optCtrl').checked = c.stream.controls;
+  document.getElementById('optCharset').value = c.stream.charset;
+  document.getElementById('ncHint').textContent = 'nc ' + location.hostname + ' ' + c.stream.port;
+  fillSelect(document.getElementById('fontName'), j.fonts, c.font.name);
+  document.getElementById('fontScale').value = c.font.scale;
+  document.getElementById('insL').value = c.insets.left;
+  document.getElementById('insR').value = c.insets.right;
+  document.getElementById('insT').value = c.insets.top;
+  document.getElementById('insB').value = c.insets.bottom;
+  document.getElementById('maxFPS').value = c.maxFPS;
+  document.getElementById('res').textContent =
+    'Ausgabe ' + c.width + '×' + c.height + (c.fb ? ' → ' + c.fb : ' (ohne Framebuffer)');
+}
+
+function applyLayout() {
+  const mode = document.querySelector('input[name=mode]:checked').value;
+  api('POST', '/api/layout', {
+    mode,
+    viewports: [document.getElementById('vp0').value, document.getElementById('vp1').value],
+  }).then(() => toast('Layout übernommen'));
+}
+
+function activateScreen() {
+  api('POST', '/api/screen', {name: document.getElementById('screens').value, activate: true})
+    .then(() => toast('Screen aktiviert'));
+}
+
+function serialApply(enabled) {
+  const port = document.getElementById('serPort').value;
+  if (!port) { toast('kein Port gewählt', true); return; }
+  api('POST', '/api/serial', {
+    port,
+    baud: parseInt(document.getElementById('serBaud').value),
+    parity: document.getElementById('serParity').value,
+    stopbits: parseInt(document.getElementById('serStop').value),
+    enabled,
+  }).then(() => toast(enabled ? 'Seriell verbunden: ' + port : 'Seriell getrennt'));
+}
+
+function applyStreamOpts() {
+  api('POST', '/api/config', {stream: {
+    wrap: document.getElementById('optWrap').checked,
+    ansi: document.getElementById('optAnsi').checked,
+    controls: document.getElementById('optCtrl').checked,
+    charset: document.getElementById('optCharset').value,
+  }}).then(() => toast('Stream-Optionen übernommen'));
+}
+
+function applyDisplay() {
+  api('POST', '/api/config', {
+    font: {name: document.getElementById('fontName').value,
+           scale: parseInt(document.getElementById('fontScale').value)},
+    insets: {left: parseInt(document.getElementById('insL').value),
+             right: parseInt(document.getElementById('insR').value),
+             top: parseInt(document.getElementById('insT').value),
+             bottom: parseInt(document.getElementById('insB').value)},
+    maxFPS: parseInt(document.getElementById('maxFPS').value),
+  }).then(() => toast('Darstellung übernommen'));
+}
+
+function testPattern(p) {
+  api('POST', '/api/test', {pattern: p}).then(() => toast('Testbild: ' + p));
+}
+
+loadState();
+setInterval(() => {
+  const tag = (document.activeElement || {}).tagName;
+  if (document.visibilityState === 'visible' && tag !== 'SELECT' && tag !== 'INPUT') loadState();
+}, 5000);
+</script>
+</body>
+</html>
