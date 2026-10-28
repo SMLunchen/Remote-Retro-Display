@@ -35,7 +35,7 @@
   <div>
     <div class="panel">
       <h2>Vorschau (CRT-Bild)</h2>
-      <img id="preview" src="/preview" alt="Vorschau">
+      <img id="preview" alt="Vorschau">
       <div class="muted" id="res"></div>
     </div>
     <div class="panel">
@@ -114,6 +114,31 @@
 <div id="msg"></div>
 <script>
 let state = null;
+
+// Vorschau: ETag-Polling — unveränderte Frames kosten nur ein 304.
+(function () {
+  const img = document.getElementById('preview');
+  let etag = '';
+  async function tick() {
+    try {
+      if (document.visibilityState === 'visible') {
+        const r = await fetch('/api/preview.png', {
+          cache: 'no-store',
+          headers: etag ? {'If-None-Match': etag} : {},
+        });
+        if (r.status === 200) {
+          etag = r.headers.get('ETag') || '';
+          const url = URL.createObjectURL(await r.blob());
+          const old = img.src;
+          img.src = url;
+          if (old && old.startsWith('blob:')) URL.revokeObjectURL(old);
+        }
+      }
+    } catch (e) { /* Server weg? still weiter versuchen */ }
+    setTimeout(tick, 700);
+  }
+  tick();
+})();
 
 function toast(t, isErr) {
   const m = document.getElementById('msg');

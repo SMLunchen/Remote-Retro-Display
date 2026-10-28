@@ -5,6 +5,7 @@ package compositor
 import (
 	"context"
 	"log"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -117,7 +118,7 @@ func (c *Compositor) Run(ctx context.Context, outs []output.Output) {
 			return
 		case <-time.After(time.Second / time.Duration(fps)):
 		}
-		if frame := c.tick(); frame != nil {
+		if frame := c.safeTick(); frame != nil {
 			for _, o := range outs {
 				if err := o.Push(frame); err != nil {
 					log.Printf("output: %v", err)
@@ -125,6 +126,18 @@ func (c *Compositor) Run(ctx context.Context, outs []output.Output) {
 			}
 		}
 	}
+}
+
+// safeTick fängt Panics aus dem Rendern ab: ein fehlerhaftes Widget darf
+// nicht den ganzen Daemon (und damit die In-Memory-Screens) reißen.
+func (c *Compositor) safeTick() (frame *surface.Surface) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("compositor: Panic beim Rendern abgefangen: %v\n%s", r, debug.Stack())
+			frame = nil
+		}
+	}()
+	return c.tick()
 }
 
 // tick prüft auf Änderungen und rendert bei Bedarf. Gibt den neuen Frame

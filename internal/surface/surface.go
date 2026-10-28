@@ -191,27 +191,24 @@ func (s *Surface) Gray() *image.Gray {
 	return &image.Gray{Pix: s.Pix, Stride: s.W, Rect: image.Rect(0, 0, s.W, s.H)}
 }
 
+// clipRect garantiert 0 ≤ x0 ≤ x1 ≤ maxW und 0 ≤ y0 ≤ y1 ≤ maxH — auch wenn
+// das Rechteck komplett außerhalb der Fläche liegt.
 func clipRect(x, y, w, h, maxW, maxH int) (x0, y0, x1, y1 int) {
-	x0, y0, x1, y1 = x, y, x+w, y+h
-	if x0 < 0 {
-		x0 = 0
-	}
-	if y0 < 0 {
-		y0 = 0
-	}
-	if x1 > maxW {
-		x1 = maxW
-	}
-	if y1 > maxH {
-		y1 = maxH
-	}
-	if x1 < x0 {
-		x1 = x0
-	}
-	if y1 < y0 {
-		y1 = y0
-	}
+	x0 = clampInt(x, 0, maxW)
+	y0 = clampInt(y, 0, maxH)
+	x1 = clampInt(x+w, x0, maxW)
+	y1 = clampInt(y+h, y0, maxH)
 	return
+}
+
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 func abs(a int) int {

@@ -102,55 +102,77 @@ func decode(r *http.Request, v any) error {
 
 // --- Vorschau ---
 
-// encodeFrame liefert den aktuellen Frame als PNG, gecacht pro Frame-Version.
-func (s *Server) encodeFrame() []byte {
+// pngEnc: schnellste Kompressionsstufe — auf dem Pi 1 zählt CPU-Zeit,
+// nicht die PNG-Größe im LAN.
+var pngEnc = png.Encoder{CompressionLevel: png.BestSpeed}
+
+// encodeFrame liefert den aktuellen Frame als PNG samt ETag, gecacht pro
+// Frame-Version.
+func (s *Server) encodeFrame() ([]byte, string) {
 	version := s.comp.Version()
 	s.pngMu.Lock()
 	defer s.pngMu.Unlock()
 	if s.pngData != nil && s.pngVersion == version {
-		return s.pngData
+		return s.pngData, fmt.Sprintf("%q", fmt.Sprint(s.pngVersion))
 	}
 	frame, v := s.comp.Snapshot()
 	var buf bytes.Buffer
-	if err := png.Encode(&buf, frame.Gray()); err != nil {
-		return nil
+	if err := pngEnc.Encode(&buf, frame.Gray()); err != nil {
+		return nil, ""
 	}
 	s.pngData = buf.Bytes()
 	s.pngVersion = v
-	return s.pngData
+	return s.pngData, fmt.Sprintf("%q", fmt.Sprint(v))
 }
 
+// handlePreviewPNG unterstützt If-None-Match, damit das Web-UI günstig
+// pollen kann: unveränderte Frames kosten nur ein 304.
 func (s *Server) handlePreviewPNG(w http.ResponseWriter, r *http.Request) {
-	data := s.encodeFrame()
+	data, etag := s.encodeFrame()
+	if data == nil {
+		fail(w, 500, fmt.Errorf("PNG-Encode fehlgeschlagen"))
+		return
+	}
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("ETag", etag)
 	w.Write(data)
 }
 
-// handlePreviewStream liefert ~1 fps als multipart/x-mixed-replace für <img>.
+// handlePreviewStream liefert Frames als multipart/x-mixed-replace für <img>.
+// Die Abschluss-Boundary wird direkt nach jedem Frame geschickt, da manche
+// Browser ein Teilbild erst beim Eintreffen der nächsten Boundary anzeigen.
 func (s *Server) handlePreviewStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=frame")
 	w.Header().Set("Cache-Control", "no-store")
 	flusher, _ := w.(http.Flusher)
+	io.WriteString(w, "--frame\r\n")
 	var last uint64
+	first := true
 	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-time.After(500 * time.Millisecond):
+		if !first {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(500 * time.Millisecond):
+			}
+			if s.comp.Version() == last {
+				continue
+			}
 		}
-		v := s.comp.Version()
-		if v == last {
-			continue
-		}
-		last = v
-		data := s.encodeFrame()
+		first = false
+		data, _ := s.encodeFrame()
 		if data == nil {
 			continue
 		}
-		fmt.Fprintf(w, "--frame\r\nContent-Type: image/png\r\nContent-Length: %d\r\n\r\n", len(data))
+		last = s.comp.Version()
+		fmt.Fprintf(w, "Content-Type: image/png\r\nContent-Length: %d\r\n\r\n", len(data))
 		w.Write(data)
-		io.WriteString(w, "\r\n")
+		io.WriteString(w, "\r\n--frame\r\n")
 		if flusher != nil {
 			flusher.Flush()
 		}
